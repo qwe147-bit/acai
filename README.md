@@ -61,6 +61,11 @@
             cursor: pointer;
             color: #004085;
         }
+        .category-btn.active {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
         .delete-category-btn {
             margin-left: 8px;
             color: #dc3545;
@@ -81,6 +86,9 @@
         }
         .content-table th {
             background-color: #f2f2f2;
+        }
+        .content-table tr:hover {
+            background-color: #f1f1f1;
         }
         .form-section {
             margin-top: 30px;
@@ -111,17 +119,16 @@
             background-color: #f1f8ff;
             border-radius: 4px;
         }
-        .file-format-hint {
-            font-size: 12px;
-            color: #6c757d;
-            margin-top: 5px;
-        }
         .optional-field {
             color: #6c757d;
             font-style: italic;
         }
         .required-field {
             color: #dc3545;
+        }
+        .highlight {
+            background-color: yellow;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -175,21 +182,16 @@
             <h3>批量操作</h3>
             <div class="form-group">
                 <label for="importFile">导入数据</label>
-                <input type="file" id="importFile" accept=".json,.csv,.txt,.xlsx">
-                <div class="file-format-hint">支持JSON、CSV、TXT和Excel格式</div>
+                <input type="file" id="importFile" accept=".json,.csv,.txt">
             </div>
             <div class="form-actions">
                 <button id="exportJSON">导出为JSON</button>
                 <button id="exportCSV">导出为CSV</button>
-                <button id="exportExcel">导出为Excel</button>
                 <button id="resetData">重置数据</button>
             </div>
         </div>
     </div>
 
-    <!-- 引入SheetJS库用于Excel处理 -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    
     <script>
         // 初始数据
         let documents = [
@@ -197,6 +199,9 @@
             { category: "常用回复", content: "感谢您的咨询，祝您生活愉快！" },
             { category: "技术支持", title: "密码重置", content: "您可以点击登录页面的'忘记密码'链接，按照提示操作重置密码。" }
         ];
+        
+        // 当前选中的分类
+        let currentCategory = null;
         
         // DOM元素
         const categoriesEl = document.getElementById('categoriesContainer');
@@ -210,7 +215,6 @@
         const cancelEditEl = document.getElementById('cancelEdit');
         const exportJSONEl = document.getElementById('exportJSON');
         const exportCSVEl = document.getElementById('exportCSV');
-        const exportExcelEl = document.getElementById('exportExcel');
         const resetDataEl = document.getElementById('resetData');
         const importFileEl = document.getElementById('importFile');
         
@@ -247,11 +251,11 @@
             
             // 全部按钮
             const allBtn = document.createElement('button');
-            allBtn.className = 'category-btn active';
+            allBtn.className = 'category-btn' + (currentCategory === null ? ' active' : '');
             allBtn.textContent = '全部';
             allBtn.addEventListener('click', () => {
-                document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
-                allBtn.classList.add('active');
+                currentCategory = null;
+                renderCategories();
                 renderContent();
             });
             categoriesEl.appendChild(allBtn);
@@ -262,12 +266,12 @@
                 categoryItem.className = 'category-item';
                 
                 const btn = document.createElement('button');
-                btn.className = 'category-btn';
+                btn.className = 'category-btn' + (currentCategory === category ? ' active' : '');
                 btn.textContent = category;
                 btn.addEventListener('click', () => {
-                    document.querySelectorAll('.category-btn').forEach(btn => btn.classList.remove('active'));
-                    btn.classList.add('active');
-                    renderContent(category);
+                    currentCategory = category;
+                    renderCategories();
+                    renderContent();
                 });
                 
                 const deleteBtn = document.createElement('button');
@@ -292,6 +296,7 @@
                 editCategoryEl.value = '';
                 editTitleEl.value = '';
                 editContentEl.value = '';
+                delete saveContentEl.dataset.index;
                 editCategoryEl.focus();
             });
             categoriesEl.appendChild(addBtn);
@@ -301,6 +306,9 @@
         function deleteCategory(category) {
             if (confirm(`确定要删除分类"${category}"吗？该分类下的所有内容也将被删除！`)) {
                 documents = documents.filter(doc => doc.category !== category);
+                if (currentCategory === category) {
+                    currentCategory = null;
+                }
                 renderCategories();
                 renderContent();
                 saveData();
@@ -308,12 +316,12 @@
         }
         
         // 渲染内容表格
-        function renderContent(category = null) {
+        function renderContent() {
             contentBodyEl.innerHTML = '';
             
             let filteredDocs = documents;
-            if (category && category !== '全部') {
-                filteredDocs = documents.filter(doc => doc.category === category);
+            if (currentCategory) {
+                filteredDocs = documents.filter(doc => doc.category === currentCategory);
             }
             
             if (filteredDocs.length === 0) {
@@ -323,14 +331,34 @@
                 return;
             }
             
-            filteredDocs.forEach((doc, index) => {
+            // 创建文档索引映射
+            const indexMap = [];
+            let globalIndex = 0;
+            
+            filteredDocs.forEach(doc => {
+                const originalIndex = documents.findIndex(d => 
+                    d.category === poc.category && 
+                    d.title === poc.title && 
+                    d.content === poc.content
+                );
+                
+                if (originalIndex !== -1) {
+                    indexMap.push(originalIndex);
+                }
+            });
+            
+            filteredDocs.forEach((doc, filteredIndex) => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${doc.category}</td>
                     <td>${doc.title || '<span class="optional-field">无标题</span>'}</td>
                     <td>${doc.content}</td>
                 `;
-                row.addEventListener('click', () => editDocument(index));
+                
+                // 使用映射的原始索引
+                const originalIndex = indexMap[filteredIndex];
+                row.addEventListener('click', () => editDocument(originalIndex));
+                
                 contentBodyEl.appendChild(row);
             });
         }
@@ -403,13 +431,14 @@
                 return;
             }
             
-            filteredDocs.forEach(doc => {
+            filteredDocs.forEach((doc, index) => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${highlightText(doc.category, keyword)}</td>
                     <td>${doc.title ? highlightText(doc.title, keyword) : '<span class="optional-field">无标题</span>'}</td>
                     <td>${highlightText(doc.content, keyword)}</td>
                 `;
+                row.addEventListener('click', () => editDocument(index));
                 contentBodyEl.appendChild(row);
             });
         }
@@ -417,7 +446,7 @@
         // 高亮文本
         function highlightText(text, keyword) {
             if (!keyword) return text;
-            return text.replace(new RegExp(keyword, 'gi'), match => `<span style="background-color:yellow">${match}</span>`);
+            return text.replace(new RegExp(keyword, 'gi'), match => `<span class="highlight">${match}</span>`);
         }
         
         // 导出为JSON
@@ -458,27 +487,11 @@
             URL.revokeObjectURL(url);
         }
         
-        // 导出为Excel
-        function exportToExcel() {
-            // 准备工作表数据
-            const wsData = [
-                ['分类', '标题', '内容'],
-                ...documents.map(doc => [doc.category, doc.title || '', doc.content])
-            ];
-            
-            const ws = XLSX.utils.aoa_to_sheet(wsData);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "文书数据");
-            
-            // 生成Excel文件并下载
-            XLSX.writeFile(wb, `文书数据_${new Date().toISOString().slice(0,10)}.xlsx`);
-        }
-        
         // 导入数据
         function importData(file) {
             const reader = new FileReader();
             
-            reader.onload = async function(e) {
+            reader.onload = function(e) {
                 try {
                     let importedData = [];
                     const fileContent = e.target.result;
@@ -492,9 +505,6 @@
                     }
                     else if (file.name.endsWith('.txt')) {
                         importedData = parseTXT(fileContent);
-                    }
-                    else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-                        importedData = await parseExcel(file);
                     }
                     
                     // 验证并标准化数据
@@ -513,6 +523,7 @@
                     
                     if (confirm(`找到 ${validatedData.length} 条有效数据，是否导入？`)) {
                         documents = validatedData;
+                        currentCategory = null;
                         renderCategories();
                         renderContent();
                         saveData();
@@ -564,31 +575,6 @@
                 });
         }
         
-        // 解析Excel
-        async function parseExcel(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                
-                reader.onload = function(e) {
-                    try {
-                        const data = new Uint8Array(e.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        
-                        // 获取第一个工作表
-                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                        const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-                        
-                        resolve(jsonData);
-                    } catch (error) {
-                        reject(error);
-                    }
-                };
-                
-                reader.onerror = reject;
-                reader.readAsArrayBuffer(file);
-            });
-        }
-        
         // 重置数据
         function resetData() {
             if (confirm('确定要重置为默认数据吗？所有修改将丢失。')) {
@@ -597,6 +583,7 @@
                     { category: "常用回复", content: "感谢您的咨询，祝您生活愉快！" },
                     { category: "技术支持", title: "密码重置", content: "您可以点击登录页面的'忘记密码'链接，按照提示操作重置密码。" }
                 ];
+                currentCategory = null;
                 renderCategories();
                 renderContent();
                 saveData();
@@ -620,7 +607,6 @@
             
             exportJSONEl.addEventListener('click', exportToJSON);
             exportCSVEl.addEventListener('click', exportToCSV);
-            exportExcelEl.addEventListener('click', exportToExcel);
             resetDataEl.addEventListener('click', resetData);
             
             importFileEl.addEventListener('change', (e) => {
